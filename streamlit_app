@@ -1,1 +1,87 @@
 
+import streamlit as st
+import pandas as pd
+
+# Load and preprocess data
+data = pd.read_csv('startup_funding.csv')
+
+# Data Cleaning
+data['Amount in USD'] = (
+    data['Amount in USD']
+    .replace({',': ''}, regex=True)
+    .apply(pd.to_numeric, errors='coerce')
+)
+data.rename(columns={
+    "Date dd/mm/yyyy": "Date",
+    "Startup Name": "Startup",
+    "Industry Vertical": "Industry",
+    "City  Location": "City",
+    "InvestmentnType": "Investment Type",
+    "Amount in USD": "Funding Amount"
+}, inplace=True)
+data['Date'] = pd.to_datetime(data['Date'], format='%d/%m/%Y', errors='coerce')
+
+# Sidebar Filters
+st.sidebar.header("Filters")
+industry_filter = st.sidebar.multiselect("Select Industry", data['Industry'].dropna().unique())
+city_filter = st.sidebar.multiselect("Select City", data['City'].dropna().unique())
+min_funding, max_funding = st.sidebar.slider(
+    "Funding Range (in USD)",
+    min_value=int(data['Funding Amount'].min() or 0),
+    max_value=int(data['Funding Amount'].max() or 1e6),
+    value=(0, int(data['Funding Amount'].max() or 1e6))
+)
+
+# Apply Filters
+filtered_data = data.copy()
+if industry_filter:
+    filtered_data = filtered_data[filtered_data['Industry'].isin(industry_filter)]
+if city_filter:
+    filtered_data = filtered_data[filtered_data['City'].isin(city_filter)]
+filtered_data = filtered_data[
+    (filtered_data['Funding Amount'] >= min_funding) &
+    (filtered_data['Funding Amount'] <= max_funding)
+]
+
+# Main Dashboard
+st.title("Simplified Startup Funding Dashboard")
+
+# Funding by Industry
+st.subheader("Top-Funded Industries")
+if not filtered_data.empty:
+    industry_funding = (
+        filtered_data.groupby('Industry')['Funding Amount']
+        .sum()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    st.bar_chart(industry_funding)
+else:
+    st.write("No data available for the selected filters.")
+
+# Funding Over Time
+st.subheader("Funding Trends Over Time")
+if not filtered_data.empty and 'Date' in filtered_data.columns:
+    funding_trends = (
+        filtered_data.groupby(filtered_data['Date'].dt.to_period('M'))['Funding Amount']
+        .sum()
+        .sort_index()
+    )
+    st.line_chart(funding_trends)
+else:
+    st.write("No data available for the selected filters.")
+
+# Display Filtered Data
+st.subheader("Filtered Data")
+if not filtered_data.empty:
+    st.dataframe(filtered_data[['Startup', 'Industry', 'City', 'Funding Amount']])
+else:
+    st.write("No data available for the selected filters.")
+
+# Download Filtered Data
+st.download_button(
+    label="Download Filtered Data",
+    data=filtered_data.to_csv(index=False),
+    file_name='filtered_startup_funding.csv',
+    mime='text/csv'
+)
